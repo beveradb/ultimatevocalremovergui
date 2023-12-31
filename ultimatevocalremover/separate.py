@@ -1,19 +1,19 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from demucs.apply import apply_model, demucs_segments
-from demucs.hdemucs import HDemucs
-from demucs.model_v2 import auto_load_demucs_model_v2
-from demucs.pretrained import get_model as _gm
-from demucs.utils import apply_model_v1
-from demucs.utils import apply_model_v2
-from lib_v5.tfc_tdf_v3 import TFC_TDF_net, STFT
-from lib_v5 import spec_utils
-from lib_v5.vr_network import nets
-from lib_v5.vr_network import nets_new
-from lib_v5.vr_network.model_param_init import ModelParameters
+from ultimatevocalremover.demucs.apply import apply_model, demucs_segments
+from ultimatevocalremover.demucs.hdemucs import HDemucs
+from ultimatevocalremover.demucs.model_v2 import auto_load_demucs_model_v2
+from ultimatevocalremover.demucs.pretrained import get_model as _gm
+from ultimatevocalremover.demucs.utils import apply_model_v1
+from ultimatevocalremover.demucs.utils import apply_model_v2
+from ultimatevocalremover.lib_v5.tfc_tdf_v3 import TFC_TDF_net, STFT
+from ultimatevocalremover.lib_v5 import spec_utils
+from ultimatevocalremover.lib_v5.vr_network import nets
+from ultimatevocalremover.lib_v5.vr_network import nets_new
+from ultimatevocalremover.lib_v5.vr_network.model_param_init import ModelParameters
 from pathlib import Path
-from gui_data.constants import *
-from gui_data.error_handling import *
+from ultimatevocalremover.gui_data.constants import *
+from ultimatevocalremover.gui_data.error_handling import *
 from scipy import signal
 import audioread
 import gzip
@@ -26,7 +26,7 @@ import torch
 import warnings
 import pydub
 import soundfile as sf
-import lib_v5.mdxnet as MdxnetSet
+import ultimatevocalremover.lib_v5.mdxnet as MdxnetSet
 import math
 #import random
 from onnx import load

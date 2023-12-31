@@ -2,7 +2,7 @@
 import time
 #start_time = time.time()
 import audioread
-import gui_data.sv_ttk
+import ultimatevocalremover.gui_data.sv_ttk
 import hashlib
 import json
 import librosa
@@ -30,21 +30,21 @@ from tkinter.font import Font
 from tkinter import filedialog
 from tkinter import messagebox
 from collections import Counter
-from __version__ import VERSION, PATCH, PATCH_MAC, PATCH_LINUX
+from ultimatevocalremover.__version__ import VERSION, PATCH, PATCH_MAC, PATCH_LINUX
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from datetime import datetime
-from gui_data.constants import *
-from gui_data.app_size_values import *
-from gui_data.error_handling import error_text, error_dialouge
-from gui_data.old_data_check import file_check, remove_unneeded_yamls, remove_temps
-from gui_data.tkinterdnd2 import TkinterDnD, DND_FILES
-from lib_v5.vr_network.model_param_init import ModelParameters
+from ultimatevocalremover.gui_data.constants import *
+from ultimatevocalremover.gui_data.app_size_values import *
+from ultimatevocalremover.gui_data.error_handling import error_text, error_dialouge
+from ultimatevocalremover.gui_data.old_data_check import file_check, remove_unneeded_yamls, remove_temps
+from ultimatevocalremover.gui_data.tkinterdnd2 import TkinterDnD, DND_FILES
+from ultimatevocalremover.lib_v5.vr_network.model_param_init import ModelParameters
 from kthread import KThread
-from lib_v5 import spec_utils
+from ultimatevocalremover.lib_v5 import spec_utils
 from pathlib  import Path
-from separate import (
+from ultimatevocalremover.separate import (
     SeperateDemucs, SeperateMDX, SeperateMDXC, SeperateVR,  # Model-related
     save_format, clear_gpu_cache,  # Utility functions
     cuda_available, mps_available, #directml_available,
@@ -1550,7 +1550,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
         chosen_font_name, chosen_font_file = font_checker(OWN_FONT_PATH)
 
         if chosen_font_name:
-            gui_data.sv_ttk.set_theme("dark", chosen_font_name, 10)
+            ultimatevocalremover.gui_data.sv_ttk.set_theme("dark", chosen_font_name, 10)
             if chosen_font_file:
                 pyglet_font.add_file(chosen_font_file)
             self.font_set = Font(family=chosen_font_name, size=FONT_SIZE_F2)
@@ -1558,7 +1558,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
         else:
             pyglet_font.add_file(FONT_MAPPER[MAIN_FONT_NAME])
             pyglet_font.add_file(FONT_MAPPER[SEC_FONT_NAME])
-            gui_data.sv_ttk.set_theme("dark", MAIN_FONT_NAME, 10)
+            ultimatevocalremover.gui_data.sv_ttk.set_theme("dark", MAIN_FONT_NAME, 10)
             self.font_set = Font(family=SEC_FONT_NAME, size=FONT_SIZE_F2)
             self.font_entry = Font(family=MAIN_FONT_NAME, size=FONT_SIZE_F2)
     
@@ -2141,7 +2141,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
         style.configure('TLabel', foreground='#F6F6F7')
         style.configure('TMenubutton', foreground='#F6F6F7')
         style.configure('TRadiobutton', foreground='#F6F6F7')
-        gui_data.sv_ttk.set_theme("dark", MAIN_FONT_NAME, 10, fg_color_set=fg_color_set)
+        ultimatevocalremover.gui_data.sv_ttk.set_theme("dark", MAIN_FONT_NAME, 10, fg_color_set=fg_color_set)
 
     def show_file_dialog(self, text='Select Audio files', dialoge_type=None):
         parent_win = root
@@ -7246,8 +7246,8 @@ def extract_stems(audio_file_base, export_path):
 
     return list(set(filtered_lst))
 
-if __name__ == "__main__":
-
+def main():
+    global root
     try:
         windll.user32.SetThreadDpiAwarenessContext(wintypes.HANDLE(-1))
     except Exception as e:
@@ -7263,3 +7263,7 @@ if __name__ == "__main__":
     root.deiconify()
     root.configure(bg=BG_COLOR)
     root.mainloop()
+
+if __name__ == "__main__":
+    main()
+    
