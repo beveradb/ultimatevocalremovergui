@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ultimatevocalremover"
-version = "5.6.1"
+version = "5.6.2"
 description = ""
 authors = ["Anjok07 <68268275+Anjok07@users.noreply.github.com>"]
 readme = "README.md"
