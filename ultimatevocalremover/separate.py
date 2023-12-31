@@ -32,6 +32,8 @@ import math
 from onnx import load
 from onnx2pytorch import ConvertModel
 import gc
+import logging
+import time
  
 if TYPE_CHECKING:
     from UVR import ModelData
@@ -76,6 +78,13 @@ class SeperateAttributes:
                  master_inst_source=None,
                  master_vocal_source=None):
         
+        self.logger = logging.getLogger(__name__)
+        log_handler = logging.StreamHandler()
+        log_formatter = logging.Formatter(fmt="%(asctime)s.%(msecs)03d - %(levelname)s - %(module)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+        log_handler.setFormatter(log_formatter)
+        self.logger.addHandler(log_handler)
+        self.logger.setLevel(logging.DEBUG)
+
         self.list_all_models: list
         self.process_data = process_data
         self.progress_value = 0
@@ -472,113 +481,175 @@ class SeperateAttributes:
 class SeperateMDX(SeperateAttributes):        
 
     def seperate(self):
+        self.logger.debug("Starting the separation process...")
+        self.separate_start_time = time.perf_counter()
+
         samplerate = 44100
-    
+        
         if self.primary_model_name == self.model_basename and isinstance(self.primary_sources, tuple):
+            self.logger.debug("Using cached sources...")
             mix, source = self.primary_sources
             self.load_cached_sources()
         else:
             self.start_inference_console_write()
 
             if self.is_mdx_ckpt:
+                self.logger.debug("Loading checkpoint model...")
                 model_params = torch.load(self.model_path, map_location=lambda storage, loc: storage)['hyper_parameters']
                 self.dim_c, self.hop = model_params['dim_c'], model_params['hop_length']
                 separator = MdxnetSet.ConvTDFNet(**model_params)
                 self.model_run = separator.load_from_checkpoint(self.model_path).to(self.device).eval()
             else:
+                self.logger.debug("Setting up model for inference...")
                 if self.mdx_segment_size == self.dim_t and not self.is_other_gpu:
                     ort_ = ort.InferenceSession(self.model_path, providers=self.run_type)
-                    self.model_run = lambda spek:ort_.run(None, {'input': spek.cpu().numpy()})[0]
+                    self.model_run = lambda spek: ort_.run(None, {'input': spek.cpu().numpy()})[0]
                 else:
                     self.model_run = ConvertModel(load(self.model_path))
                     self.model_run.to(self.device).eval()
 
             self.running_inference_console_write()
+            self.logger.debug("Preparing mix...")
             mix = prepare_mix(self.audio_file)
             
+            self.logger.debug("Demixing...")
             source = self.demix(mix)
             
             if not self.is_vocal_split_model:
+                self.logger.debug("Caching source...")
                 self.cache_source((mix, source))
             self.write_to_console(DONE, base_text='')            
 
         mdx_net_cut = True if self.primary_stem in MDX_NET_FREQ_CUT and self.is_match_frequency_pitch else False
 
         if self.is_secondary_model_activated and self.secondary_model:
+            self.logger.debug("Processing secondary model...")
             self.secondary_source_primary, self.secondary_source_secondary = process_secondary_model(self.secondary_model, self.process_data, main_process_method=self.process_method, main_model_primary=self.primary_stem)
         
         if not self.is_primary_stem_only:
             secondary_stem_path = os.path.join(self.export_path, f'{self.audio_file_base}_({self.secondary_stem}).wav')
+            self.logger.debug(f"Processing secondary stem: {self.secondary_stem}")
             if not isinstance(self.secondary_source, np.ndarray):
                 raw_mix = self.demix(self.match_frequency_pitch(mix), is_match_mix=True) if mdx_net_cut else self.match_frequency_pitch(mix)
                 self.secondary_source = spec_utils.invert_stem(raw_mix, source) if self.is_invert_spec else mix.T-source.T
             
+            self.logger.debug("Finalizing secondary stem processing...")
             self.secondary_source_map = self.final_process(secondary_stem_path, self.secondary_source, self.secondary_source_secondary, self.secondary_stem, samplerate)
         
         if not self.is_secondary_stem_only:
             primary_stem_path = os.path.join(self.export_path, f'{self.audio_file_base}_({self.primary_stem}).wav')
-
+            self.logger.debug(f"Processing primary stem: {self.primary_stem}")
             if not isinstance(self.primary_source, np.ndarray):
                 self.primary_source = source.T
                 
+            self.logger.debug("Finalizing primary stem processing...")
             self.primary_source_map = self.final_process(primary_stem_path, self.primary_source, self.secondary_source_primary, self.primary_stem, samplerate)
         
         clear_gpu_cache()
+        self.logger.debug("Cleared GPU cache.")
 
         secondary_sources = {**self.primary_source_map, **self.secondary_source_map}
         
+        self.logger.debug("Processing vocal split chain...")
         self.process_vocal_split_chain(secondary_sources)
 
+        self.logger.debug("Separation process completed.")
+        self.logger.info(f'Time Elapsed: {time.strftime("%H:%M:%S", time.gmtime(int(time.perf_counter() - self.separate_start_time)))}')
+
         if self.is_secondary_model or self.is_pre_proc_model:
+            self.logger.debug("Returning secondary sources...")
             return secondary_sources
 
+
     def initialize_model_settings(self):
-        self.n_bins = self.n_fft//2+1
-        self.trim = self.n_fft//2
-        self.chunk_size = self.hop * (self.mdx_segment_size-1)
-        self.gen_size = self.chunk_size-2*self.trim
+        self.logger.debug("Initializing model settings...")
+
+        # Calculate the number of frequency bins for the STFT.
+        self.n_bins = self.n_fft // 2 + 1
+        self.logger.debug(f"Number of frequency bins (n_bins): {self.n_bins}")
+
+        # Calculate the trimming length, which is half of the FFT size.
+        self.trim = self.n_fft // 2
+        self.logger.debug(f"Trim length: {self.trim}")
+
+        # Calculate the chunk size based on the hop length and the segment size.
+        self.chunk_size = self.hop * (self.mdx_segment_size - 1)
+        self.logger.debug(f"Chunk size: {self.chunk_size}")
+
+        # Calculate the generated size, which is the chunk size with trimming from both ends.
+        self.gen_size = self.chunk_size - 2 * self.trim
+        self.logger.debug(f"Generated size (gen_size): {self.gen_size}")
+
+        # Initialize the STFT object with the specified parameters.
         self.stft = STFT(self.n_fft, self.hop, self.dim_f, self.device)
+        self.logger.debug("STFT object initialized with specified parameters.")
+
+        self.logger.debug("Model settings initialization completed.")
+
 
     def demix(self, mix, is_match_mix=False):
+        self.logger.debug("Initializing model settings for demixing...")
         self.initialize_model_settings()
-        
-        org_mix = mix
-        tar_waves_ = []
 
+        # Storing the original mix for later use.
+        org_mix = mix
+        self.logger.debug(f"Original mix stored. Shape: {org_mix.shape}")
+
+        # Preparing a list to store the separated waveforms.
+        tar_waves_ = []
+        self.logger.debug("Initialized list for storing separated waveforms.")
+
+        # Handling different chunk sizes and overlaps based on the matching requirement.
         if is_match_mix:
-            chunk_size = self.hop * (256-1)
+            self.logger.debug("Matching mix enabled.")
+            chunk_size = self.hop * (256 - 1)
             overlap = 0.02
+            self.logger.debug(f"Chunk size for matching mix: {chunk_size}, Overlap: {overlap}")
         else:
+            self.logger.debug("Standard demixing process.")
             chunk_size = self.chunk_size
             overlap = self.overlap_mdx
-            
+            self.logger.debug(f"Standard chunk size: {chunk_size}, Overlap: {overlap}")
+
             if self.is_pitch_change:
+                self.logger.debug(f"Pitch change enabled. Semitone shift: {-self.semitone_shift}")
                 mix, sr_pitched = spec_utils.change_pitch_semitones(mix, 44100, semitone_shift=-self.semitone_shift)
+                self.logger.debug(f"Pitch of mix changed. New sample rate: {sr_pitched}")
 
-        gen_size = chunk_size-2*self.trim
+        gen_size = chunk_size - 2 * self.trim
+        self.logger.debug(f"Generated size calculated: {gen_size}")
 
-        pad = gen_size + self.trim - ((mix.shape[-1]) % gen_size)
+        # Padding calculation and application.
+        pad = gen_size + self.trim - (mix.shape[-1] % gen_size)
         mixture = np.concatenate((np.zeros((2, self.trim), dtype='float32'), mix, np.zeros((2, pad), dtype='float32')), 1)
+        self.logger.debug(f"Mixture prepared with padding. Mixture shape: {mixture.shape}")
 
+        # Calculating step size for processing chunks.
         step = self.chunk_size - self.n_fft if overlap == DEFAULT else int((1 - overlap) * chunk_size)
+        self.logger.debug(f"Step size for processing chunks: {step}")
+
+        # Initializing arrays for result and overlap handling.
         result = np.zeros((1, 2, mixture.shape[-1]), dtype=np.float32)
         divider = np.zeros((1, 2, mixture.shape[-1]), dtype=np.float32)
         total = 0
         total_chunks = (mixture.shape[-1] + step - 1) // step
+        self.logger.debug(f"Total chunks to process: {total_chunks}")
 
+        # Processing each chunk of the mixture.
         for i in range(0, mixture.shape[-1], step):
             total += 1
             start = i
             end = min(i + chunk_size, mixture.shape[-1])
+            self.logger.debug(f"Processing chunk {total}/{total_chunks}: Start {start}, End {end}")
 
             chunk_size_actual = end - start
-
-            if overlap == 0:
-                window = None
-            else:
+            window = None
+            if overlap != 0:
                 window = np.hanning(chunk_size_actual)
                 window = np.tile(window[None, None, :], (1, 2, 1))
+                self.logger.debug("Window applied to the chunk.")
 
+            # Preparing the mix part for processing.
             mix_part_ = mixture[:, start:end]
             if end != i + chunk_size:
                 pad_size = (i + chunk_size) - end
@@ -586,55 +657,86 @@ class SeperateMDX(SeperateAttributes):
 
             mix_part = torch.tensor([mix_part_], dtype=torch.float32).to(self.device)
             mix_waves = mix_part.split(self.mdx_batch_size)
-            
+            self.logger.debug(f"Mix part split into batches. Number of batches: {len(mix_waves)}")
+
             with torch.no_grad():
                 for mix_wave in mix_waves:
-                    self.running_inference_progress_bar(total_chunks, is_match_mix=is_match_mix)
-
+                    self.logger.debug("Running model on current batch.")
                     tar_waves = self.run_model(mix_wave, is_match_mix=is_match_mix)
-                    
+
                     if window is not None:
-                        tar_waves[..., :chunk_size_actual] *= window 
+                        tar_waves[..., :chunk_size_actual] *= window
                         divider[..., start:end] += window
                     else:
                         divider[..., start:end] += 1
 
-                    result[..., start:end] += tar_waves[..., :end-start]
-            
+                    result[..., start:end] += tar_waves[..., :end - start]
+
+        # Normalizing the result by the divider.
         tar_waves = result / divider
         tar_waves_.append(tar_waves)
+        self.logger.debug("Result normalized by divider.")
 
         tar_waves_ = np.vstack(tar_waves_)[:, :, self.trim:-self.trim]
         tar_waves = np.concatenate(tar_waves_, axis=-1)[:, :mix.shape[-1]]
-        
-        source = tar_waves[:,0:None]
+        source = tar_waves[:, 0:None]
+        self.logger.debug(f"Concatenated tar_waves. Shape: {tar_waves.shape}")
 
+        # Correcting the pitch and applying compensation if necessary.
         if self.is_pitch_change and not is_match_mix:
             source = self.pitch_fix(source, sr_pitched, org_mix)
+            self.logger.debug("Pitch correction applied to the source.")
 
-        source = source if is_match_mix else source*self.compensate
+        if not is_match_mix:
+            source *= self.compensate
+            self.logger.debug("Source compensated.")
 
+        # Applying denoising if enabled.
         if self.is_denoise_model and not is_match_mix:
             if NO_STEM in self.primary_stem_native or self.primary_stem_native == INST_STEM:
                 if org_mix.shape[1] != source.shape[1]:
                     source = spec_utils.match_array_shapes(source, org_mix)
-                source = org_mix - vr_denoiser(org_mix-source, self.device, model_path=self.DENOISER_MODEL)
+                source = org_mix - vr_denoiser(org_mix - source, self.device, model_path=self.DENOISER_MODEL)
             else:
                 source = vr_denoiser(source, self.device, model_path=self.DENOISER_MODEL)
+            self.logger.debug("Denoising applied to the source.")
 
+        self.logger.debug("Demixing process completed.")
         return source
 
     def run_model(self, mix, is_match_mix=False):
-        
-        spek = self.stft(mix.to(self.device))*self.adjust
-        spek[:, :, :3, :] *= 0 
+        self.logger.debug("Running model with input mix...")
 
+        # Performing STFT on the input mix and adjusting the spectrum.
+        spek = self.stft(mix.to(self.device)) * self.adjust
+        self.logger.debug(f"STFT applied on mix. Spectrum shape: {spek.shape}")
+
+        # Zeroing the first 3 bins of the spectrum.
+        spek[:, :, :3, :] *= 0
+        self.logger.debug("First 3 bins of the spectrum zeroed.")
+
+        # Handling the case where matching the mix is required.
         if is_match_mix:
+            self.logger.debug("Matching mix mode enabled.")
             spec_pred = spek.cpu().numpy()
+            self.logger.debug("Spectrum prediction obtained directly from STFT output.")
         else:
-            spec_pred = -self.model_run(-spek)*0.5+self.model_run(spek)*0.5 if self.is_denoise else self.model_run(spek)
+            self.logger.debug("Standard model processing mode.")
+            # If denoising is enabled, the model is run on both the negative and positive spectrums.
+            if self.is_denoise:
+                self.logger.debug("Denoising enabled.")
+                spec_pred = -self.model_run(-spek) * 0.5 + self.model_run(spek) * 0.5
+                self.logger.debug("Model run on both negative and positive spectrums for denoising.")
+            else:
+                spec_pred = self.model_run(spek)
+                self.logger.debug("Model run on the spectrum without denoising.")
 
-        return self.stft.inverse(torch.tensor(spec_pred).to(self.device)).cpu().detach().numpy()
+        # Performing inverse STFT to convert back to the time domain.
+        result = self.stft.inverse(torch.tensor(spec_pred).to(self.device)).cpu().detach().numpy()
+        self.logger.debug(f"Inverse STFT applied. Result shape: {result.shape}")
+
+        self.logger.debug("Model run completed.")
+        return result
 
 class SeperateMDXC(SeperateAttributes):        
 
