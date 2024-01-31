@@ -49,7 +49,7 @@ from ultimatevocalremover.separate import (
     save_format, clear_gpu_cache,  # Utility functions
     cuda_available, mps_available, #directml_available,
 )
-from playsound import playsound
+from ultimatevocalremover.lib_v5 import playsound
 from typing import List
 import onnx
 import re
@@ -6418,10 +6418,10 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
             if total_files == 1 and not is_verified_audio:
                 self.command_Text.write(f'{error_text_console}\n{PROCESS_FAILED}')
                 self.command_Text.write(time_elapsed())
-                playsound(FAIL_CHIME) if self.is_task_complete_var.get() else None
+                playsound.play(FAIL_CHIME) if self.is_task_complete_var.get() else None
             else:
                 self.command_Text.write('{}{}'.format(process_complete_text, time_elapsed()))
-                playsound(COMPLETE_CHIME) if self.is_task_complete_var.get() else None
+                playsound.play(COMPLETE_CHIME) if self.is_task_complete_var.get() else None
 
             self.process_end()
 
@@ -6429,7 +6429,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
             self.error_log_var.set(error_text(self.chosen_audio_tool_var.get(), e))
             self.command_Text.write(f'\n\n{PROCESS_FAILED}')
             self.command_Text.write(time_elapsed())
-            playsound(FAIL_CHIME) if self.is_task_complete_var.get() else None
+            playsound.play(FAIL_CHIME) if self.is_task_complete_var.get() else None
             self.process_end(error=e)
 
     def process_determine_secondary_model(self, process_method, main_model_primary_stem, is_primary_stem_only=False, is_secondary_stem_only=False):
@@ -6669,12 +6669,12 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
             if inputPath_total_len == 1 and not is_verified_audio:
                 self.command_Text.write(f'{error_text_console}\n{PROCESS_FAILED}')
                 self.command_Text.write(time_elapsed())
-                playsound(FAIL_CHIME) if self.is_task_complete_var.get() else None
+                playsound.play(FAIL_CHIME) if self.is_task_complete_var.get() else None
             else:
                 set_progress_bar(1.0)
                 self.command_Text.write(PROCESS_COMPLETE)
                 self.command_Text.write(time_elapsed())
-                playsound(COMPLETE_CHIME) if self.is_task_complete_var.get() else None
+                playsound.play(COMPLETE_CHIME) if self.is_task_complete_var.get() else None
                 
             self.process_end()
                         
@@ -6682,7 +6682,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
             self.error_log_var.set("{}{}".format(error_text(self.chosen_process_method_var.get(), e), self.get_settings_list()))
             self.command_Text.write(f'\n\n{PROCESS_FAILED}')
             self.command_Text.write(time_elapsed())
-            playsound(FAIL_CHIME) if self.is_task_complete_var.get() else None
+            playsound.play(FAIL_CHIME) if self.is_task_complete_var.get() else None
             self.process_end(error=e)
 
     #--Varible Methods--
