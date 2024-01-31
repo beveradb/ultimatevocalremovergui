@@ -9,6 +9,8 @@ ultimatevocalremover/gui_data/cr_text.txt
 /lyrics/
 /.cache/
 /ultimatevocalremover/models/*/*.onnx
+/ultimatevocalremover/models/*/*.pth
+/ultimatevocalremover/models/Demucs_Models/v3_v4_repo/demucs_models.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
