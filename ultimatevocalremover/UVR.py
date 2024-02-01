@@ -1,5 +1,7 @@
 # GUI modules
 import time
+import logging
+from importlib import metadata
 #start_time = time.time()
 import audioread
 import ultimatevocalremover.gui_data.sv_ttk
@@ -1288,6 +1290,16 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
         #Run the __init__ method on the tk.Tk class
         super().__init__()
         
+        self.logger = logging.getLogger(__name__)
+        log_handler = logging.StreamHandler()
+        log_formatter = logging.Formatter(fmt="%(asctime)s.%(msecs)03d - %(levelname)s - %(module)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+        log_handler.setFormatter(log_formatter)
+        self.logger.addHandler(log_handler)
+        self.logger.setLevel(logging.DEBUG)
+
+        package_version = metadata.distribution("ultimatevocalremover").version
+        self.logger.info(f"UVR version {package_version} MainWindow instantiating")
+
         self.set_app_font()
 
         style = ttk.Style(self)
@@ -1361,6 +1373,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
         try:
             self.load_saved_vars(data)
         except Exception as e:
+            self.logger.error(e)
             self.error_log_var.set(error_text('Loading Saved Variables', e))
             self.load_saved_vars(DEFAULT_DATA)
             
@@ -2277,6 +2290,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                         if os.path.isfile(os.path.join(dir, temp_file)):
                             os.remove(os.path.join(dir, temp_file))
         except Exception as e:
+            self.logger.error(e)
             self.error_log_var.set(error_text(TEMP_FILE_DELETION_TEXT, e))
         
     def get_files_from_dir(self, directory, ext, is_mdxnet=False):
@@ -2387,6 +2401,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                 close_method()
             open_method()
         except Exception as e:
+            self.logger.error(e)
             self.error_log_var.set("{}".format(error_text(menu, e)))
 
     def input_right_click_menu(self, event):
@@ -2488,6 +2503,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                     error_name = f'{type(e).__name__}'
                     traceback_text = ''.join(traceback.format_tb(e.__traceback__))
                     message = f'{error_name}: "{e}"\n{traceback_text}"'
+                    self.logger.error(e)
                     if is_process:
                         audio_base_name = os.path.basename(i)
                         self.error_log_var.set(f'{ERROR_LOADING_FILE_TEXT[0]}:\n\n\"{audio_base_name}\"\n\n{ERROR_LOADING_FILE_TEXT[1]}:\n\n{message}')
@@ -4592,6 +4608,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                 
             self.menu_placement(set_vocal_splitter, VOCAL_SPLIT_OPTIONS_TEXT, top_window=top_window, pop_up=True)
         except Exception as e:
+            self.logger.error(e)
             error_name = f'{type(e).__name__}'
             traceback_text = ''.join(traceback.format_tb(e.__traceback__))
             message = f'{error_name}: "{e}"\n{traceback_text}"'
@@ -4625,6 +4642,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                         primary_stem = INST_STEM if model_params['target_name'] == OTHER_STEM.lower() else stem
                 
         except Exception as e:
+            self.logger.error(e)
             error_name = f'{type(e).__name__}'
             traceback_text = ''.join(traceback.format_tb(e.__traceback__))
             message = f'{error_name}: "{e}"\n{traceback_text}"'
@@ -5216,8 +5234,10 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                         widget.configure(state=tk.DISABLED)
                         
                 try:
+                    self.logger.error(e)
                     self.error_log_var.set(error_text('Online Data Refresh', e))
                 except Exception as e:
+                    self.logger.error(e)
                     print(e)
 
             return is_new_update
@@ -5361,6 +5381,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
             self.mdx_hash_MAPPER = load_model_hash_data(MDX_HASH_JSON)
             self.mdx_name_select_MAPPER = load_model_hash_data(MDX_MODEL_NAME_SELECT)
             self.demucs_name_select_MAPPER = load_model_hash_data(DEMUCS_MODEL_NAME_SELECT)
+            self.logger.error(e)
             self.error_log_var.set(e)
             print(e)
 
@@ -5490,6 +5511,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                     self.download_post_action(DOWNLOAD_COMPLETE)
                 
             except Exception as e:
+                self.logger.error(e)
                 self.error_log_var.set(error_text(DOWNLOADING_ITEM, e))
                 self.download_progress_info_var.set(DOWNLOAD_FAILED)
                 
@@ -6426,6 +6448,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
             self.process_end()
 
         except Exception as e:
+            self.logger.error(e)
             self.error_log_var.set(error_text(self.chosen_audio_tool_var.get(), e))
             self.command_Text.write(f'\n\n{PROCESS_FAILED}')
             self.command_Text.write(time_elapsed())
@@ -6679,6 +6702,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
             self.process_end()
                         
         except Exception as e:
+            self.logger.error(e)
             self.error_log_var.set("{}{}".format(error_text(self.chosen_process_method_var.get(), e), self.get_settings_list()))
             self.command_Text.write(f'\n\n{PROCESS_FAILED}')
             self.command_Text.write(time_elapsed())

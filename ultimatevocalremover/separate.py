@@ -84,6 +84,8 @@ class SeperateAttributes:
         log_handler.setFormatter(log_formatter)
         self.logger.addHandler(log_handler)
         self.logger.setLevel(logging.DEBUG)
+        
+        self.logger.info(f"SeperateAttributes class instantiating")
 
         self.list_all_models: list
         self.process_data = process_data

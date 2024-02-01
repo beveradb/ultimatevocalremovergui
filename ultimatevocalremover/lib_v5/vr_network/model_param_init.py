@@ -1,37 +1,44 @@
 import json
 
-# Initialize an empty dictionary to hold default parameters for the model.
 default_param = {}
-# Default values for various parameters, some are specific to training phase.
 default_param["bins"] = -1
-default_param["unstable_bins"] = -1  # Used only during training
-default_param["stable_bins"] = -1  # Used only during training
-default_param["sample_rate"] = 44100  # Default sample rate for audio processing.
+default_param["unstable_bins"] = -1  # training only
+default_param["stable_bins"] = -1  # training only
+default_param["sr"] = 44100
 default_param["pre_filter_start"] = -1
 default_param["pre_filter_stop"] = -1
-default_param["band"] = {}  # A dictionary to hold band-specific parameters.
+default_param["band"] = {}
 
-# Constant for the number of bins parameter.
 N_BINS = "n_bins"
 
 
-def int_keys(dictionary):
+def int_keys(d):
     """
-    Converts keys in the given dictionary from strings to integers if they are digit strings.
+    Converts string keys that represent integers into actual integer keys in a list.
+
+    This function is particularly useful when dealing with JSON data that may represent
+    integer keys as strings due to the nature of JSON encoding. By converting these keys
+    back to integers, it ensures that the data can be used in a manner consistent with
+    its original representation, especially in contexts where the distinction between
+    string and integer keys is important.
 
     Args:
-        dictionary (dict): The dictionary whose keys need to be converted.
+        input_list (list of tuples): A list of (key, value) pairs where keys are strings
+                                     that may represent integers.
 
     Returns:
-        dict: A new dictionary with keys converted to integers where applicable.
+        dict: A dictionary with keys converted to integers where applicable.
     """
-    result = {}
-    for key, value in dictionary.items():
-        # Convert key to integer if it's a digit string.
+    # Initialize an empty dictionary to hold the converted key-value pairs.
+    result_dict = {}
+    # Iterate through each key-value pair in the input list.
+    for key, value in d:
+        # Check if the key is a digit (i.e., represents an integer).
         if key.isdigit():
+            # Convert the key from a string to an integer.
             key = int(key)
-        result[key] = value
-    return result
+        result_dict[key] = value
+    return result_dict
 
 
 class ModelParameters(object):
@@ -49,14 +56,15 @@ class ModelParameters(object):
         Args:
             config_path (str): Path to the JSON configuration file.
         """
+
         # Load parameters from the given configuration file path.
-        with open(config_path, "r") as file:
-            self.param = json.loads(file.read(), object_pairs_hook=int_keys)
+        with open(config_path, "r") as f:
+            self.param = json.loads(f.read(), object_pairs_hook=int_keys)
 
         # Ensure certain parameters are set to False if not specified in the configuration.
-        for key in ["mid_side", "mid_side_b", "mid_side_b2", "stereo_width", "stereo_noise", "reverse"]:
-            if key not in self.param:
-                self.param[key] = False
+        for k in ["mid_side", "mid_side_b", "mid_side_b2", "stereo_w", "stereo_n", "reverse"]:
+            if not k in self.param:
+                self.param[k] = False
 
         # If 'n_bins' is specified in the parameters, it's used as the value for 'bins'.
         if N_BINS in self.param:

@@ -26,23 +26,12 @@ class Conv2DBNActiv(nn.Module):
         activation_function (callable, optional): The activation function to use. Defaults to nn.ReLU.
     """
 
-    def __init__(self, num_input_channels, num_output_channels, kernel_size=3, stride_length=1, padding_size=1, dilation_rate=1, activation_function=nn.ReLU):
+    def __init__(self, nin, nout, ksize=3, stride=1, pad=1, dilation=1, activ=nn.ReLU):
         super(Conv2DBNActiv, self).__init__()
+
         # The nn.Sequential container allows us to stack the Conv2d, BatchNorm2d, and activation layers
         # into a single module, simplifying the forward pass.
-        self.conv = nn.Sequential(
-            nn.Conv2d(
-                num_input_channels,  # Number of input channels
-                num_output_channels,  # Number of output channels
-                kernel_size=kernel_size,  # Size of the convolving kernel
-                stride=stride_length,  # Stride of the convolution
-                padding=padding_size,  # Zero-padding added to both sides of the input
-                dilation=dilation_rate,  # Spacing between kernel elements
-                bias=False,  # No bias terms, as BatchNorm2d will add a learnable bias
-            ),
-            nn.BatchNorm2d(num_output_channels),  # Normalizes the output of the convolution
-            activation_function(),  # Applies the activation function
-        )
+        self.conv = nn.Sequential(nn.Conv2d(nin, nout, kernel_size=ksize, stride=stride, padding=pad, dilation=dilation, bias=False), nn.BatchNorm2d(nout), activ())
 
     def __call__(self, input_tensor):
         # Defines the computation performed at every call.
@@ -74,8 +63,9 @@ class SeperableConv2DBNActiv(nn.Module):
         activation_function (callable, optional): The activation function to use. Defaults to nn.ReLU.
     """
 
-    def __init__(self, num_input_channels, num_output_channels, kernel_size=3, stride_length=1, padding_size=1, dilation_rate=1, activation_function=nn.ReLU):
+    def __init__(self, nin, nout, ksize=3, stride=1, pad=1, dilation=1, activ=nn.ReLU):
         super(SeperableConv2DBNActiv, self).__init__()
+
         # Initialize the sequential container with the depthwise convolution.
         # The number of groups in the depthwise convolution is set to num_input_channels, which means each input channel is treated separately.
         # The pointwise convolution then combines these separate channels into num_output_channels channels.
@@ -83,23 +73,23 @@ class SeperableConv2DBNActiv(nn.Module):
         # Finally, the activation function is applied to introduce non-linearity.
         self.conv = nn.Sequential(
             nn.Conv2d(
-                num_input_channels,
-                num_input_channels,  # For depthwise convolution, in_channels = out_channels = num_input_channels
-                kernel_size=kernel_size,
-                stride=stride_length,
-                padding=padding_size,
-                dilation=dilation_rate,
-                groups=num_input_channels,  # This makes it a depthwise convolution
+                nin,
+                nin,  # For depthwise convolution, in_channels = out_channels = num_input_channels
+                kernel_size=ksize,
+                stride=stride,
+                padding=pad,
+                dilation=dilation,
+                groups=nin,  # This makes it a depthwise convolution
                 bias=False,  # Bias is not used because it will be handled by BatchNorm2d
             ),
             nn.Conv2d(
-                num_input_channels,
-                num_output_channels,  # Pointwise convolution to combine channels
+                nin,
+                nout,  # Pointwise convolution to combine channels
                 kernel_size=1,  # Kernel size of 1 for pointwise convolution
                 bias=False,  # Bias is not used because it will be handled by BatchNorm2d
             ),
-            nn.BatchNorm2d(num_output_channels),  # Normalize the output of the pointwise convolution
-            activation_function(),  # Apply the activation function
+            nn.BatchNorm2d(nout),  # Normalize the output of the pointwise convolution
+            activ(),  # Apply the activation function
         )
 
     def __call__(self, input_tensor):
@@ -117,8 +107,8 @@ class Encoder(nn.Module):
     This is achieved by applying filters (through convolutions) that can capture patterns or features in the data.
     The Encoder can be thought of as a feature extractor that prepares the data for further processing by the network.
     Attributes:
-        first_convolution_layer (Conv2DBNActiv): The first convolutional layer in the encoder.
-        second_convolution_layer (Conv2DBNActiv): The second convolutional layer in the encoder.
+        conv1 (Conv2DBNActiv): The first convolutional layer in the encoder.
+        conv2 (Conv2DBNActiv): The second convolutional layer in the encoder.
 
     Args:
         number_of_input_channels (int): Number of input channels for the first convolutional layer.
@@ -129,29 +119,30 @@ class Encoder(nn.Module):
         activation_function (callable): The activation function to use after each convolutional layer.
     """
 
-    def __init__(self, number_of_input_channels, number_of_output_channels, kernel_size=3, stride_length=1, padding_size=1, activation_function=nn.LeakyReLU):
+    def __init__(self, nin, nout, ksize=3, stride=1, pad=1, activ=nn.LeakyReLU):
         super(Encoder, self).__init__()
+
         # The first convolutional layer takes the input and applies a convolution,
         # followed by batch normalization and an activation function specified by `activation_function`.
         # This layer is responsible for capturing the initial set of features from the input data.
-        self.first_convolution_layer = Conv2DBNActiv(number_of_input_channels, number_of_output_channels, kernel_size, 1, padding_size, activ=activation_function)
+        self.conv1 = Conv2DBNActiv(nin, nout, ksize, 1, pad, activ=activ)
 
         # The second convolutional layer further processes the output from the first layer,
         # applying another set of convolution, batch normalization, and activation.
-        # This layer helps in capturing more complex patterns in the data by building upon the initial features extracted by first_convolution_layer.
-        self.second_convolution_layer = Conv2DBNActiv(number_of_output_channels, number_of_output_channels, kernel_size, stride_length, padding_size, activ=activation_function)
+        # This layer helps in capturing more complex patterns in the data by building upon the initial features extracted by conv1.
+        self.conv2 = Conv2DBNActiv(nout, nout, ksize, stride, pad, activ=activ)
 
     def __call__(self, input_tensor):
         # The input data `input_tensor` is passed through the first convolutional layer.
         # The output of this layer serves as a 'skip connection' that can be used later in the network to preserve spatial information.
-        skip_connection_output = self.first_convolution_layer(input_tensor)
+        skip = self.conv1(input_tensor)
 
         # The output from the first layer is then passed through the second convolutional layer.
-        # This processed data `abstracted_features` is the final output of the Encoder, representing the abstracted features of the input.
-        abstracted_features = self.second_convolution_layer(skip_connection_output)
+        # This processed data `hidden` is the final output of the Encoder, representing the abstracted features of the input.
+        hidden = self.conv2(skip)
 
-        # The Encoder returns two outputs: `abstracted_features`, the abstracted feature representation, and `skip_connection_output`, the intermediate representation from first_convolution_layer.
-        return abstracted_features, skip_connection_output
+        # The Encoder returns two outputs: `hidden`, the abstracted feature representation, and `skip`, the intermediate representation from conv1.
+        return hidden, skip
 
 
 class Decoder(nn.Module):
@@ -174,25 +165,30 @@ class Decoder(nn.Module):
         include_dropout (bool): Whether to include a dropout layer for regularization.
     """
 
-    def __init__(self, input_channels, output_channels, kernel_size=3, stride=1, padding=1, activation_function=nn.ReLU, include_dropout=False):
+    def __init__(self, nin, nout, ksize=3, stride=1, pad=1, activ=nn.ReLU, dropout=False):
         super(Decoder, self).__init__()
-        # Initialize the convolutional layer with specified parameters.
-        self.convolution = Conv2DBNActiv(input_channels, output_channels, kernel_size, 1, padding, activ=activation_function)
-        # Initialize the dropout layer if include_dropout is set to True, otherwise set to None.
-        self.dropout_layer = nn.Dropout2d(0.1) if include_dropout else None
 
-    def __call__(self, input_tensor, skip_connection=None):
+        # Initialize the convolutional layer with specified parameters.
+        self.conv = Conv2DBNActiv(nin, nout, ksize, 1, pad, activ=activ)
+
+        # Initialize the dropout layer if include_dropout is set to True
+        self.dropout = nn.Dropout2d(0.1) if dropout else None
+
+    def __call__(self, input_tensor, skip=None):
         # Upsample the input tensor to a higher resolution using bilinear interpolation.
         input_tensor = F.interpolate(input_tensor, scale_factor=2, mode="bilinear", align_corners=True)
         # If a skip connection is provided, crop it to match the size of input_tensor and concatenate them along the channel dimension.
-        if skip_connection is not None:
-            skip_connection = spec_utils.crop_center(skip_connection, input_tensor)  # Crop skip_connection to match input_tensor's dimensions.
-            input_tensor = torch.cat([input_tensor, skip_connection], dim=1)  # Concatenate input_tensor and skip_connection along the channel dimension.
+        if skip is not None:
+            skip = spec_utils.crop_center(skip, input_tensor)  # Crop skip_connection to match input_tensor's dimensions.
+            input_tensor = torch.cat([input_tensor, skip], dim=1)  # Concatenate input_tensor and skip_connection along the channel dimension.
+
         # Pass the concatenated tensor (or just input_tensor if no skip_connection is provided) through the convolutional layer.
-        output_tensor = self.convolution(input_tensor)
+        output_tensor = self.conv(input_tensor)
+
         # If dropout is enabled, apply it to the output of the convolutional layer.
-        if self.dropout_layer is not None:
-            output_tensor = self.dropout_layer(output_tensor)
+        if self.dropout is not None:
+            output_tensor = self.dropout(output_tensor)
+
         # Return the final output tensor.
         return output_tensor
 
@@ -214,7 +210,7 @@ class ASPPModule(nn.Module):
         bottleneck (nn.Sequential): A 1x1 convolutional layer that combines all features followed by dropout for regularization.
     """
 
-    def __init__(self, nn_architecture, input_channels, output_channels, dilations=(4, 8, 16), activation=nn.ReLU):
+    def __init__(self, nn_architecture, nin, nout, dilations=(4, 8, 16), activ=nn.ReLU):
         """
         Initializes the ASPP module with specified parameters.
 
@@ -226,9 +222,10 @@ class ASPPModule(nn.Module):
             activation (callable): Activation function to use after convolutional layers.
         """
         super(ASPPModule, self).__init__()
+
         # Adaptive average pooling reduces the spatial dimensions to 1x1, focusing on global context,
         # followed by a 1x1 convolution to project back to the desired channel dimension.
-        self.conv1 = nn.Sequential(nn.AdaptiveAvgPool2d((1, None)), Conv2DBNActiv(input_channels, input_channels, 1, 1, 0, activ=activation))
+        self.conv1 = nn.Sequential(nn.AdaptiveAvgPool2d((1, None)), Conv2DBNActiv(nin, nin, 1, 1, 0, activ=activ))
 
         self.nn_architecture = nn_architecture
         # Architecture identifiers for models requiring additional layers.
@@ -236,28 +233,29 @@ class ASPPModule(nn.Module):
         self.seven_layer = [537238, 537227, 33966]
 
         # Extra convolutional layer used for six and seven layer configurations.
-        extra_conv = SeperableConv2DBNActiv(input_channels, input_channels, 3, 1, dilations[2], dilations[2], activ=activation)
+        extra_conv = SeperableConv2DBNActiv(nin, nin, 3, 1, dilations[2], dilations[2], activ=activ)
 
         # Standard 1x1 convolution for channel reduction.
-        self.conv2 = Conv2DBNActiv(input_channels, input_channels, 1, 1, 0, activ=activation)
+        self.conv2 = Conv2DBNActiv(nin, nin, 1, 1, 0, activ=activ)
+
         # Separable convolutions with different dilation rates for multi-scale feature extraction.
-        self.conv3 = SeperableConv2DBNActiv(input_channels, input_channels, 3, 1, dilations[0], dilations[0], activ=activation)
-        self.conv4 = SeperableConv2DBNActiv(input_channels, input_channels, 3, 1, dilations[1], dilations[1], activ=activation)
-        self.conv5 = SeperableConv2DBNActiv(input_channels, input_channels, 3, 1, dilations[2], dilations[2], activ=activation)
+        self.conv3 = SeperableConv2DBNActiv(nin, nin, 3, 1, dilations[0], dilations[0], activ=activ)
+        self.conv4 = SeperableConv2DBNActiv(nin, nin, 3, 1, dilations[1], dilations[1], activ=activ)
+        self.conv5 = SeperableConv2DBNActiv(nin, nin, 3, 1, dilations[2], dilations[2], activ=activ)
 
         # Depending on the architecture, include the extra convolutional layers.
         if self.nn_architecture in self.six_layer:
             self.conv6 = extra_conv
-            input_channels_multiplier = 6
+            nin_x = 6
         elif self.nn_architecture in self.seven_layer:
             self.conv6 = extra_conv
             self.conv7 = extra_conv
-            input_channels_multiplier = 7
+            nin_x = 7
         else:
-            input_channels_multiplier = 5
+            nin_x = 5
 
         # Bottleneck layer combines all the multi-scale features into the desired number of output channels.
-        self.bottleneck = nn.Sequential(Conv2DBNActiv(input_channels * input_channels_multiplier, output_channels, 1, 1, 0, activ=activation), nn.Dropout2d(0.1))
+        self.bottleneck = nn.Sequential(Conv2DBNActiv(nin * nin_x, nout, 1, 1, 0, activ=activ), nn.Dropout2d(0.1))
 
     def forward(self, input_tensor):
         """
@@ -269,26 +267,28 @@ class ASPPModule(nn.Module):
         Returns:
             Tensor: Output tensor after applying ASPP.
         """
-        _, _, height, width = input_tensor.size()
+        _, _, h, w = input_tensor.size()
+
         # Apply the first convolutional sequence and upsample to the original resolution.
-        feature_layer_1 = F.interpolate(self.conv1(input_tensor), size=(height, width), mode="bilinear", align_corners=True)
+        feat1 = F.interpolate(self.conv1(input_tensor), size=(h, w), mode="bilinear", align_corners=True)
+
         # Apply the remaining convolutions directly on the input.
-        feature_layer_2 = self.conv2(input_tensor)
-        feature_layer_3 = self.conv3(input_tensor)
-        feature_layer_4 = self.conv4(input_tensor)
-        feature_layer_5 = self.conv5(input_tensor)
+        feat2 = self.conv2(input_tensor)
+        feat3 = self.conv3(input_tensor)
+        feat4 = self.conv4(input_tensor)
+        feat5 = self.conv5(input_tensor)
 
         # Concatenate features from all layers. Depending on the architecture, include the extra features.
         if self.nn_architecture in self.six_layer:
-            feature_layer_6 = self.conv6(input_tensor)
-            concatenated_output = torch.cat((feature_layer_1, feature_layer_2, feature_layer_3, feature_layer_4, feature_layer_5, feature_layer_6), dim=1)
+            feat6 = self.conv6(input_tensor)
+            out = torch.cat((feat1, feat2, feat3, feat4, feat5, feat6), dim=1)
         elif self.nn_architecture in self.seven_layer:
-            feature_layer_6 = self.conv6(input_tensor)
-            feature_layer_7 = self.conv7(input_tensor)
-            concatenated_output = torch.cat((feature_layer_1, feature_layer_2, feature_layer_3, feature_layer_4, feature_layer_5, feature_layer_6, feature_layer_7), dim=1)
+            feat6 = self.conv6(input_tensor)
+            feat7 = self.conv7(input_tensor)
+            out = torch.cat((feat1, feat2, feat3, feat4, feat5, feat6, feat7), dim=1)
         else:
-            concatenated_output = torch.cat((feature_layer_1, feature_layer_2, feature_layer_3, feature_layer_4, feature_layer_5), dim=1)
+            out = torch.cat((feat1, feat2, feat3, feat4, feat5), dim=1)
 
         # Apply the bottleneck layer to combine and reduce the channel dimensions.
-        bottleneck_output = self.bottleneck(concatenated_output)
+        bottleneck_output = self.bottleneck(out)
         return bottleneck_output
