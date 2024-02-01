@@ -834,7 +834,7 @@ class SeperateMDXC(SeperateAttributes):
         else:
             self.start_inference_console_write()
             self.running_inference_console_write()
-            mix = prepare_mix(self.audio_file)
+            mix = self.prepare_mix(self.audio_file)
             sources = self.demix(mix)
             if not self.is_vocal_split_model:
                 self.cache_source((mix, sources))
@@ -1000,7 +1000,7 @@ class SeperateDemucs(SeperateAttributes):
             self.start_inference_console_write()
             is_no_cache = True
 
-        mix = prepare_mix(self.audio_file)
+        mix = self.prepare_mix(self.audio_file)
 
         if is_no_cache:
             if self.demucs_version == DEMUCS_V1:
@@ -1028,7 +1028,7 @@ class SeperateDemucs(SeperateAttributes):
                     is_no_write = True
                     self.write_to_console(DONE, base_text='')
                     mix_no_voc = process_secondary_model(self.pre_proc_model, self.process_data, is_pre_proc_model=True)
-                    inst_mix = prepare_mix(mix_no_voc[INST_STEM])
+                    inst_mix = self.prepare_mix(mix_no_voc[INST_STEM])
                     self.process_iteration()
                     self.running_inference_console_write(is_no_write=is_no_write)
                     inst_source = self.demix_demucs(inst_mix)
@@ -1119,7 +1119,7 @@ class SeperateDemucs(SeperateAttributes):
                             secondary_source = secondary_source.T
                         else:
                             if not isinstance(raw_mixture, np.ndarray):
-                                raw_mixture = prepare_mix(self.audio_file)
+                                raw_mixture = self.prepare_mix(self.audio_file)
        
                             secondary_source = source[self.demucs_source_map[self.primary_stem]]
                             

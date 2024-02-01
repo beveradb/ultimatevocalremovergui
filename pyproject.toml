@@ -46,6 +46,7 @@ onnx2pytorch = "^0.4.1"
 soundfile = {version = "0.11.0", markers = "sys_platform != \"darwin\""}
 pysoundfile = {version = "0.9.0.post1", markers = "sys_platform == \"darwin\""}
 numpy = "1.23.5"
+demucs = "^4.0.1"
 
 [tool.poetry.scripts]
 uvr = 'ultimatevocalremover.UVR:main'
