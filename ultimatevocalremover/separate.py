@@ -231,6 +231,8 @@ class SeperateAttributes:
                 if not self.is_4_stem_ensemble:
                     self.primary_stem = model_data.ensemble_primary_stem if process_data["is_ensemble_master"] else model_data.primary_stem
                     self.secondary_stem = model_data.ensemble_secondary_stem if process_data["is_ensemble_master"] else model_data.secondary_stem
+
+                self.dim_f, self.dim_t = None, None
             else:
                 self.dim_f, self.dim_t = model_data.mdx_dim_f_set, 2**model_data.mdx_dim_t_set
 
@@ -689,25 +691,35 @@ class SeperateMDX(SeperateAttributes):
 class SeperateMDXC(SeperateAttributes):
 
     def seperate(self):
+        self.logger.debug("SeperateMDXC starting the separation process...")
+        self.separate_start_time = time.perf_counter()
+
         self.is_vocal_main_target = True if self.mdx_c_configs.training.target_instrument == VOCAL_STEM else False
+        self.logger.debug(f"is_vocal_main_target: {self.is_vocal_main_target}")
+
         samplerate = 44100
         sources = None
 
         if self.primary_model_name == self.model_basename and isinstance(self.primary_sources, tuple):
+            self.logger.debug("Using cached sources...")
             mix, sources = self.primary_sources
             self.load_cached_sources()
         else:
             self.start_inference_console_write()
             self.running_inference_console_write()
+            self.logger.debug("Preparing mix...")
             mix = prepare_mix(self.audio_file)
+            self.logger.debug("Starting demixing process...")
             sources = self.demix(mix)
             if not self.is_vocal_split_model:
+                self.logger.debug("Caching source...")
                 self.cache_source((mix, sources))
             self.write_to_console(DONE, base_text="")
 
         stem_list = (
             [self.mdx_c_configs.training.target_instrument] if self.mdx_c_configs.training.target_instrument and not self.is_vocal_main_target else [i for i in self.mdx_c_configs.training.instruments]
         )
+        self.logger.debug(f"stem_list: {stem_list}")
 
         if self.is_secondary_model:
             if self.is_pre_proc_model:
@@ -717,6 +729,7 @@ class SeperateMDXC(SeperateAttributes):
             self.primary_stem = self.mdxnet_stem_select
             self.secondary_stem = secondary_stem(self.mdxnet_stem_select)
             self.is_primary_stem_only, self.is_secondary_stem_only = False, False
+            self.logger.debug(f"Secondary model settings: primary_stem={self.primary_stem}, secondary_stem={self.secondary_stem}")
 
         is_all_stems = self.mdxnet_stem_select == ALL_STEMS
         is_not_ensemble_master = not self.process_data["is_ensemble_master"]
@@ -728,6 +741,7 @@ class SeperateMDXC(SeperateAttributes):
             for stem in stem_list:
                 primary_stem_path = os.path.join(self.export_path, f"{self.audio_file_base}_({stem}).wav")
                 self.primary_source = sources[stem].T
+                self.logger.debug(f"Writing audio for stem: {stem}")
                 self.write_audio(primary_stem_path, self.primary_source, samplerate, stem_name=stem)
 
                 if stem == VOCAL_STEM and not self.is_sec_bv_rebalance:
@@ -739,15 +753,19 @@ class SeperateMDXC(SeperateAttributes):
                 source_primary = sources[stem_list[0]] if self.is_multi_stem_ensemble and len(stem_list) == 2 else sources[self.mdxnet_stem_select]
 
             if self.is_secondary_model_activated and self.secondary_model:
+                self.logger.debug("Processing secondary model...")
                 self.secondary_source_primary, self.secondary_source_secondary = process_secondary_model(
                     self.secondary_model, self.process_data, main_process_method=self.process_method, main_model_primary=self.primary_stem
                 )
 
             if not self.is_primary_stem_only:
                 secondary_stem_path = os.path.join(self.export_path, f"{self.audio_file_base}_({self.secondary_stem}).wav")
+                self.logger.debug(f"Secondary stem path: {secondary_stem_path}")
                 if not isinstance(self.secondary_source, np.ndarray):
+                    self.logger.debug("Secondary source is not an ndarray, processing...")
 
                     if self.is_mdx_combine_stems and len(stem_list) >= 2:
+                        self.logger.debug("Combining stems for secondary source...")
                         if len(stem_list) == 2:
                             secondary_source = sources[self.secondary_stem]
                         else:
@@ -759,44 +777,68 @@ class SeperateMDXC(SeperateAttributes):
 
                         self.secondary_source = secondary_source.T
                     else:
+                        self.logger.debug("Matching frequency pitch for secondary source...")
                         self.secondary_source, raw_mix = source_primary, self.match_frequency_pitch(mix)
                         self.secondary_source = spec_utils.to_shape(self.secondary_source, raw_mix.shape)
 
                         if self.is_invert_spec:
+                            self.logger.debug("Inverting spectrum for secondary source...")
                             self.secondary_source = spec_utils.invert_stem(raw_mix, self.secondary_source)
                         else:
                             self.secondary_source = -self.secondary_source.T + raw_mix.T
 
+                self.logger.debug(f"Finalizing secondary stem: {self.secondary_stem}")
                 self.secondary_source_map = self.final_process(secondary_stem_path, self.secondary_source, self.secondary_source_secondary, self.secondary_stem, samplerate)
 
             if not self.is_secondary_stem_only:
                 primary_stem_path = os.path.join(self.export_path, f"{self.audio_file_base}_({self.primary_stem}).wav")
+                self.logger.debug(f"Primary stem path: {primary_stem_path}")
                 if not isinstance(self.primary_source, np.ndarray):
                     self.primary_source = source_primary.T
 
+                self.logger.debug(f"Finalizing primary stem: {self.primary_stem}")
                 self.primary_source_map = self.final_process(primary_stem_path, self.primary_source, self.secondary_source_primary, self.primary_stem, samplerate)
 
+        self.logger.debug("Clearing GPU cache...")
         clear_gpu_cache()
 
         secondary_sources = {**self.primary_source_map, **self.secondary_source_map}
+        self.logger.debug("Processing vocal split chain...")
         self.process_vocal_split_chain(secondary_sources)
+
+        self.separate_end_time = time.perf_counter()
+        self.logger.debug(f"Separation process completed in {self.separate_end_time - self.separate_start_time:.2f} seconds.")
 
         if self.is_secondary_model or self.is_pre_proc_model:
             return secondary_sources
 
     def overlap_add(self, result, x, weights, start, length):
+        self.logger.debug(f"Starting overlap_add with start={start}, length={length}")
+        self.logger.debug(f"Initial result shape: {result.shape}, x shape: {x.shape}, weights shape: {weights.shape}")
+
         if self.device == "mps":
+            self.logger.debug("Device is mps, transferring x to mps device")
             x = x.to(self.device)
+
+        self.logger.debug(f"Adding weighted x to result from start={start} to start+length={start + length}")
         result[..., start : start + length] += x[..., :length] * weights[:length]
+
+        self.logger.debug("Completed overlap_add")
         return result
 
     def demix(self, mix):
+        self.logger.debug("Starting demix process...")
         sr_pitched = 441000
         org_mix = mix
+        self.logger.debug(f"Original mix shape: {mix.shape}")
+
         if self.is_pitch_change:
+            self.logger.debug("Pitch change is enabled, changing pitch...")
             mix, sr_pitched = spec_utils.change_pitch_semitones(mix, 44100, semitone_shift=-self.semitone_shift)
+            self.logger.debug(f"Pitch changed mix shape: {mix.shape}, sr_pitched: {sr_pitched}")
 
         if self.is_roformer:
+            self.logger.debug("Using Roformer model...")
             overlap = self.overlap_mdx23
             device = self.device
 
@@ -807,30 +849,32 @@ class SeperateMDXC(SeperateAttributes):
                 model = BSRoformer(**self.roformer_config.model)
             else:
                 raise ValueError("Unknown model type in the configuration.")
+            self.logger.debug(f"Model instantiated: {model}")
 
             # Load model checkpoint
             checkpoint = torch.load(self.model_path, map_location="cpu")
             model = model if not isinstance(model, torch.nn.DataParallel) else model.module
             model.load_state_dict(checkpoint)
             model.to(device).eval()
+            self.logger.debug("Model loaded and set to evaluation mode.")
             mix = torch.tensor(mix, dtype=torch.float32)
 
             segment_size = self.mdx_c_configs.inference.dim_t if self.is_mdx_c_seg_def else self.mdx_segment_size
+            self.logger.debug(f"Segment size: {segment_size}")
 
             S = 1 if self.roformer_config.training.target_instrument else len(self.roformer_config.training.instruments)
             C = self.roformer_config.audio.hop_length * (segment_size - 1)
             step = int(overlap * self.roformer_config.audio.sample_rate)
+            self.logger.debug(f"Number of sources: {S}, Chunk size: {C}, Step size: {step}")
 
             # Create a weighting table and convert it to a PyTorch tensor
             window = torch.tensor(signal.hamming(C), dtype=torch.float32)
-
-            device = next(model.parameters()).device
-            # Transfer to the weighting plate for the same device as the other tensors
             window = window.to(device)
+            self.logger.debug("Weighting table created and transferred to device.")
 
             batch_len = int(mix.shape[1] / step)
+            self.logger.debug(f"Batch length: {batch_len}")
 
-            # with torch.cuda.amp.autocast():
             with torch.no_grad():
                 req_shape = (len(self.roformer_config.training.instruments),) + tuple(mix.shape)
                 result = torch.zeros(req_shape, dtype=torch.float32).to(device)
@@ -845,7 +889,6 @@ class SeperateMDXC(SeperateAttributes):
                     part = part.to(device)
                     x = model(part.unsqueeze(0))[0]
                     if i + C > mix.shape[1]:
-                        # Corrigido para adicionar corretamente ao final do tensor
                         result = self.overlap_add(result, x, window, result.shape[-1] - C, length)
                         counter[..., result.shape[-1] - C :] += window[:length]
                     else:
@@ -853,30 +896,38 @@ class SeperateMDXC(SeperateAttributes):
                         counter[..., i : i + length] += window[:length]
 
             estimated_sources = result / counter.clamp(min=1e-10)
+            self.logger.debug("Roformer model processing completed.")
         else:
+            self.logger.debug("Using TFC_TDF_net model...")
             model = TFC_TDF_net(self.mdx_c_configs, device=self.device)
             model.load_state_dict(torch.load(self.model_path, map_location=cpu))
             model.to(self.device).eval()
             mix = torch.tensor(mix, dtype=torch.float32)
+            self.logger.debug("Model loaded and set to evaluation mode.")
 
             try:
                 S = model.num_target_instruments
             except Exception as e:
                 S = model.module.num_target_instruments
+            self.logger.debug(f"Number of target instruments: {S}")
 
             mdx_segment_size = self.mdx_c_configs.inference.dim_t if self.is_mdx_c_seg_def else self.mdx_segment_size
+            self.logger.debug(f"MDX segment size: {mdx_segment_size}")
 
             batch_size = self.mdx_batch_size
             chunk_size = self.mdx_c_configs.audio.hop_length * (mdx_segment_size - 1)
             overlap = self.overlap_mdx23
+            self.logger.debug(f"Batch size: {batch_size}, Chunk size: {chunk_size}, Overlap: {overlap}")
 
             hop_size = chunk_size // overlap
             mix_shape = mix.shape[1]
             pad_size = hop_size - (mix_shape - chunk_size) % hop_size
             mix = torch.cat([torch.zeros(2, chunk_size - hop_size), mix, torch.zeros(2, pad_size + chunk_size - hop_size)], 1)
+            self.logger.debug(f"Mix shape after padding: {mix.shape}")
 
             chunks = mix.unfold(1, chunk_size, hop_size).transpose(0, 1)
             batches = [chunks[i : i + batch_size] for i in range(0, len(chunks), batch_size)]
+            self.logger.debug(f"Number of batches: {len(batches)}")
 
             X = torch.zeros(S, *mix.shape) if S > 1 else torch.zeros_like(mix)
             X = X.to(self.device)
@@ -892,10 +943,12 @@ class SeperateMDXC(SeperateAttributes):
                         cnt += 1
 
             estimated_sources = X[..., chunk_size - hop_size : -(pad_size + chunk_size - hop_size)] / overlap
+            self.logger.debug("TFC_TDF_net model processing completed.")
 
         pitch_fix = lambda s: self.pitch_fix(s, sr_pitched, org_mix)
 
         if S > 1 or self.is_vocal_main_target:
+            self.logger.debug("Processing multiple sources or vocal main target...")
             sources = {k: pitch_fix(v) if self.is_pitch_change else v for k, v in zip(self.mdx_c_configs.training.instruments, estimated_sources.cpu().detach().numpy())}
             if self.is_vocal_main_target:
                 if sources[VOCAL_STEM].shape[1] != org_mix.shape[1]:
@@ -903,20 +956,24 @@ class SeperateMDXC(SeperateAttributes):
                 sources[INST_STEM] = org_mix - sources[VOCAL_STEM]
 
             if self.is_denoise_model and not self.is_roformer:
+                self.logger.debug("Applying denoiser model...")
                 if VOCAL_STEM in sources.keys() and INST_STEM in sources.keys():
                     sources[VOCAL_STEM] = vr_denoiser(sources[VOCAL_STEM], self.device, model_path=self.DENOISER_MODEL)
                     if sources[VOCAL_STEM].shape[1] != org_mix.shape[1]:
                         sources[VOCAL_STEM] = spec_utils.match_array_shapes(sources[VOCAL_STEM], org_mix)
                     sources[INST_STEM] = org_mix - sources[VOCAL_STEM]
 
+            self.logger.debug("Demix process completed for multiple sources.")
             return sources
         else:
+            self.logger.debug("Processing single source...")
             if self.is_roformer:
                 sources = {k: v.cpu().detach().numpy() for k, v in zip([self.mdx_c_configs.training.target_instrument], estimated_sources)}
                 est_s = sources[self.mdx_c_configs.training.target_instrument]
             else:
                 est_s = estimated_sources.cpu().detach().numpy()
 
+            self.logger.debug("Demix process completed for single source.")
             return pitch_fix(est_s) if self.is_pitch_change else est_s
 
 
