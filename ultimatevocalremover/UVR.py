@@ -1,8 +1,10 @@
 # GUI modules
 import time
+import logging
+from importlib import metadata
 #start_time = time.time()
 import audioread
-import gui_data.sv_ttk
+import ultimatevocalremover.gui_data.sv_ttk
 import hashlib
 import json
 import librosa
@@ -30,21 +32,21 @@ from tkinter.font import Font
 from tkinter import filedialog
 from tkinter import messagebox
 from collections import Counter
-from __version__ import VERSION, PATCH, PATCH_MAC, PATCH_LINUX
+from ultimatevocalremover.__version__ import VERSION, PATCH, PATCH_MAC, PATCH_LINUX
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from datetime import datetime
-from gui_data.constants import *
-from gui_data.app_size_values import *
-from gui_data.error_handling import error_text, error_dialouge
-from gui_data.old_data_check import file_check, remove_unneeded_yamls, remove_temps
-from gui_data.tkinterdnd2 import TkinterDnD, DND_FILES
-from lib_v5.vr_network.model_param_init import ModelParameters
+from ultimatevocalremover.gui_data.constants import *
+from ultimatevocalremover.gui_data.app_size_values import *
+from ultimatevocalremover.gui_data.error_handling import error_text, error_dialouge
+from ultimatevocalremover.gui_data.old_data_check import file_check, remove_unneeded_yamls, remove_temps
+from ultimatevocalremover.gui_data.tkinterdnd2 import TkinterDnD, DND_FILES
+from ultimatevocalremover.lib_v5.vr_network.model_param_init import ModelParameters
 from kthread import KThread
-from lib_v5 import spec_utils
+from ultimatevocalremover.lib_v5 import spec_utils
 from pathlib  import Path
-from separate import (
+from ultimatevocalremover.separate import (
     SeperateDemucs, SeperateMDX, SeperateMDXC, SeperateVR,  # Model-related
     save_format, clear_gpu_cache,  # Utility functions
     cuda_available, directml_available, mps_available
@@ -1311,6 +1313,16 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
         #Run the __init__ method on the tk.Tk class
         super().__init__()
         
+        self.logger = logging.getLogger(__name__)
+        log_handler = logging.StreamHandler()
+        log_formatter = logging.Formatter(fmt="%(asctime)s.%(msecs)03d - %(levelname)s - %(module)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+        log_handler.setFormatter(log_formatter)
+        self.logger.addHandler(log_handler)
+        self.logger.setLevel(logging.DEBUG)
+
+        package_version = metadata.distribution("ultimatevocalremover").version
+        self.logger.info(f"UVR version {package_version} MainWindow instantiating")
+
         self.set_app_font()
 
         style = ttk.Style(self)
@@ -1384,6 +1396,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
         try:
             self.load_saved_vars(data)
         except Exception as e:
+            self.logger.error(e)
             self.error_log_var.set(error_text('Loading Saved Variables', e))
             self.load_saved_vars(DEFAULT_DATA)
             
@@ -1573,7 +1586,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
         chosen_font_name, chosen_font_file = font_checker(OWN_FONT_PATH)
 
         if chosen_font_name:
-            gui_data.sv_ttk.set_theme("dark", chosen_font_name, 10)
+            ultimatevocalremover.gui_data.sv_ttk.set_theme("dark", chosen_font_name, 10)
             if chosen_font_file:
                 pyglet_font.add_file(chosen_font_file)
             self.font_set = Font(family=chosen_font_name, size=FONT_SIZE_F2)
@@ -1581,7 +1594,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
         else:
             pyglet_font.add_file(FONT_MAPPER[MAIN_FONT_NAME])
             pyglet_font.add_file(FONT_MAPPER[SEC_FONT_NAME])
-            gui_data.sv_ttk.set_theme("dark", MAIN_FONT_NAME, 10)
+            ultimatevocalremover.gui_data.sv_ttk.set_theme("dark", MAIN_FONT_NAME, 10)
             self.font_set = Font(family=SEC_FONT_NAME, size=FONT_SIZE_F2)
             self.font_entry = Font(family=MAIN_FONT_NAME, size=FONT_SIZE_F2)
     
@@ -2164,7 +2177,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
         style.configure('TLabel', foreground='#F6F6F7')
         style.configure('TMenubutton', foreground='#F6F6F7')
         style.configure('TRadiobutton', foreground='#F6F6F7')
-        gui_data.sv_ttk.set_theme("dark", MAIN_FONT_NAME, 10, fg_color_set=fg_color_set)
+        ultimatevocalremover.gui_data.sv_ttk.set_theme("dark", MAIN_FONT_NAME, 10, fg_color_set=fg_color_set)
 
     def show_file_dialog(self, text='Select Audio files', dialoge_type=None):
         parent_win = root
@@ -2300,6 +2313,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                         if os.path.isfile(os.path.join(dir, temp_file)):
                             os.remove(os.path.join(dir, temp_file))
         except Exception as e:
+            self.logger.error(e)
             self.error_log_var.set(error_text(TEMP_FILE_DELETION_TEXT, e))
         
     def get_files_from_dir(self, directory, ext, is_mdxnet=False):
@@ -2410,6 +2424,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                 close_method()
             open_method()
         except Exception as e:
+            self.logger.error(e)
             self.error_log_var.set("{}".format(error_text(menu, e)))
 
     def input_right_click_menu(self, event):
@@ -2511,6 +2526,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                     error_name = f'{type(e).__name__}'
                     traceback_text = ''.join(traceback.format_tb(e.__traceback__))
                     message = f'{error_name}: "{e}"\n{traceback_text}"'
+                    self.logger.error(e)
                     if is_process:
                         audio_base_name = os.path.basename(i)
                         self.error_log_var.set(f'{ERROR_LOADING_FILE_TEXT[0]}:\n\n\"{audio_base_name}\"\n\n{ERROR_LOADING_FILE_TEXT[1]}:\n\n{message}')
@@ -4615,6 +4631,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                 
             self.menu_placement(set_vocal_splitter, VOCAL_SPLIT_OPTIONS_TEXT, top_window=top_window, pop_up=True)
         except Exception as e:
+            self.logger.error(e)
             error_name = f'{type(e).__name__}'
             traceback_text = ''.join(traceback.format_tb(e.__traceback__))
             message = f'{error_name}: "{e}"\n{traceback_text}"'
@@ -4648,6 +4665,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                         primary_stem = INST_STEM if model_params['target_name'] == OTHER_STEM.lower() else stem
                 
         except Exception as e:
+            self.logger.error(e)
             error_name = f'{type(e).__name__}'
             traceback_text = ''.join(traceback.format_tb(e.__traceback__))
             message = f'{error_name}: "{e}"\n{traceback_text}"'
@@ -5244,8 +5262,10 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                         widget.configure(state=tk.DISABLED)
                         
                 try:
+                    self.logger.error(e)
                     self.error_log_var.set(error_text('Online Data Refresh', e))
                 except Exception as e:
+                    self.logger.error(e)
                     print(e)
 
             return is_new_update
@@ -5390,6 +5410,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
             self.mdx_hash_MAPPER = load_model_hash_data(MDX_HASH_JSON)
             self.mdx_name_select_MAPPER = load_model_hash_data(MDX_MODEL_NAME_SELECT)
             self.demucs_name_select_MAPPER = load_model_hash_data(DEMUCS_MODEL_NAME_SELECT)
+            self.logger.error(e)
             self.error_log_var.set(e)
             print(e)
 
@@ -5519,6 +5540,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
                     self.download_post_action(DOWNLOAD_COMPLETE)
                 
             except Exception as e:
+                self.logger.error(e)
                 self.error_log_var.set(error_text(DOWNLOADING_ITEM, e))
                 self.download_progress_info_var.set(DOWNLOAD_FAILED)
                 
@@ -6455,6 +6477,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
             self.process_end()
 
         except Exception as e:
+            self.logger.error(e)
             self.error_log_var.set(error_text(self.chosen_audio_tool_var.get(), e))
             self.command_Text.write(f'\n\n{PROCESS_FAILED}')
             self.command_Text.write(time_elapsed())
@@ -6708,6 +6731,7 @@ class MainWindow(TkinterDnD.Tk if is_dnd_compatible else tk.Tk):
             self.process_end()
                         
         except Exception as e:
+            self.logger.error(e)
             self.error_log_var.set("{}{}".format(error_text(self.chosen_process_method_var.get(), e), self.get_settings_list()))
             self.command_Text.write(f'\n\n{PROCESS_FAILED}')
             self.command_Text.write(time_elapsed())
@@ -7277,8 +7301,8 @@ def extract_stems(audio_file_base, export_path):
 
     return list(set(filtered_lst))
 
-if __name__ == "__main__":
-
+def main():
+    global root
     try:
         windll.user32.SetThreadDpiAwarenessContext(wintypes.HANDLE(-1))
     except Exception as e:
@@ -7294,3 +7318,7 @@ if __name__ == "__main__":
     root.deiconify()
     root.configure(bg=BG_COLOR)
     root.mainloop()
+
+if __name__ == "__main__":
+    main()
+    
